@@ -13,6 +13,7 @@ import SubjectSelector from "./components/SubjectSelector";
 import UploadPDF from "./components/UploadPDF";
 import SessionDrawer from "./components/SessionDrawer";
 import LanguageToggle from "./components/LanguageToggle";
+import MobileMenu from "./components/MobileMenu";
 import useVoice from "./hooks/useVoice";
 
 const API_URL = import.meta.env.VITE_API_URL || "http://localhost:8000";
@@ -61,6 +62,7 @@ export default function App() {
   const [pendingQuiz, setPendingQuiz] = useState(null);
   const [language, setLanguage] = useState("en");
   const [drawerOpen, setDrawerOpen] = useState(false);
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [historyLoaded, setHistoryLoaded] = useState(false);
 
   const sessionId = useRef(getOrCreateSessionId()).current;
@@ -155,6 +157,18 @@ export default function App() {
 
   return (
     <div className="app">
+      {/* Mobile bottom sheet */}
+      <MobileMenu
+        open={mobileMenuOpen}
+        onClose={() => setMobileMenuOpen(false)}
+        mode={mode} onModeChange={handleModeChange}
+        subject={subject} onSubjectChange={setSubject}
+        language={language} onLanguageChange={setLanguage}
+        apiUrl={API_URL}
+        onPdfLoaded={(meta) => { setRagLoaded(true); setRagMeta(meta); }}
+        ragLoaded={ragLoaded} ragMeta={ragMeta}
+      />
+
       {/* Session Drawer */}
       <SessionDrawer
         open={drawerOpen}
@@ -219,6 +233,22 @@ export default function App() {
 
       {/* Main */}
       <main className="main">
+        {/* Mobile top bar */}
+        <div className="mobile-topbar">
+          <div className="logo">
+            <span className="logo-icon">⚡</span>
+            <span className="logo-text">VoiceSensei</span>
+          </div>
+          <div style={{ display: "flex", gap: 8 }}>
+            <button className="mobile-icon-btn" onClick={() => setDrawerOpen(true)} aria-label="History">
+              🕐
+            </button>
+            <button className="mobile-icon-btn" onClick={() => setMobileMenuOpen(true)} aria-label="Menu">
+              ☰
+            </button>
+          </div>
+        </div>
+
         <div className="chat-container">
           {messages.map((msg) => (
             <ChatBubble key={msg.id} message={msg} />

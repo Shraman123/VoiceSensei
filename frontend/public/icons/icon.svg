@@ -1,0 +1,17 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+  <rect width="512" height="512" rx="112" fill="#07090F"/>
+  <rect width="512" height="512" rx="112" fill="url(#g)"/>
+  <defs>
+    <linearGradient id="g" x1="0" y1="0" x2="512" y2="512" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#7C3AED"/>
+      <stop offset="100%" stop-color="#4F46E5"/>
+    </linearGradient>
+  </defs>
+  <!-- Mic body -->
+  <rect x="196" y="96" width="120" height="200" rx="60" fill="white"/>
+  <!-- Mic arc -->
+  <path d="M148 260 Q148 360 256 360 Q364 360 364 260" stroke="white" stroke-width="28" fill="none" stroke-linecap="round"/>
+  <!-- Mic stand -->
+  <line x1="256" y1="360" x2="256" y2="416" stroke="white" stroke-width="28" stroke-linecap="round"/>
+  <line x1="196" y1="416" x2="316" y2="416" stroke="white" stroke-width="28" stroke-linecap="round"/>
+</svg>
