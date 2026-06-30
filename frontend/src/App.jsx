@@ -1,9 +1,5 @@
 /**
  * VoiceSensei — App root
- * State machine:
- *   study mode:  speak → answer
- *   quiz mode:   speak → answer + quiz question → speak answer → evaluated (Struggle Detector)
- * Persistence: sessionId stored in localStorage, history fetched from backend on load.
  */
 import { useState, useRef, useEffect } from "react";
 import MicButton from "./components/MicButton";
@@ -14,9 +10,11 @@ import UploadPDF from "./components/UploadPDF";
 import SessionDrawer from "./components/SessionDrawer";
 import LanguageToggle from "./components/LanguageToggle";
 import MobileMenu from "./components/MobileMenu";
+import AuthModal from "./components/AuthModal";
+import ProgressPanel from "./components/ProgressPanel";
 import useVoice from "./hooks/useVoice";
+import useAuth from "./hooks/useAuth";
 
-// Empty string = relative URLs (same origin) when deployed on HF Spaces
 const API_URL = import.meta.env.VITE_API_URL ?? "http://localhost:8000";
 
 const WELCOME = {
@@ -31,10 +29,7 @@ const WELCOME = {
 
 function getOrCreateSessionId() {
   let id = localStorage.getItem("vs_session_id");
-  if (!id) {
-    id = crypto.randomUUID();
-    localStorage.setItem("vs_session_id", id);
-  }
+  if (!id) { id = crypto.randomUUID(); localStorage.setItem("vs_session_id", id); }
   return id;
 }
 
@@ -43,10 +38,8 @@ const uid = () => String(_msgId++);
 
 function dbRowToMessage(row) {
   return {
-    id: uid(),
-    type: row.role === "user" ? "user" : "agent",
-    text: row.text,
-    audioUrl: null,
+    id: uid(), type: row.role === "user" ? "user" : "agent",
+    text: row.text, audioUrl: null,
     quizQuestion: row.quiz_question || null,
     isCorrect: row.is_correct === 1,
     isStruggling: row.is_struggling === 1,
@@ -55,93 +48,67 @@ function dbRowToMessage(row) {
 }
 
 export default function App() {
-  const [messages, setMessages] = useState([WELCOME]);
-  const [mode, setMode] = useState("study");
-  const [subject, setSubject] = useState("general");
-  const [ragLoaded, setRagLoaded] = useState(false);
-  const [ragMeta, setRagMeta] = useState(null);
+  const [messages, setMessages]       = useState([WELCOME]);
+  const [mode, setMode]               = useState("study");
+  const [subject, setSubject]         = useState("general");
+  const [ragLoaded, setRagLoaded]     = useState(false);
+  const [ragMeta, setRagMeta]         = useState(null);
   const [pendingQuiz, setPendingQuiz] = useState(null);
-  const [language, setLanguage] = useState("en");
-  const [drawerOpen, setDrawerOpen] = useState(false);
+  const [language, setLanguage]       = useState("en");
+  const [drawerOpen, setDrawerOpen]   = useState(false);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
-  const [historyLoaded, setHistoryLoaded] = useState(false);
+  const [authOpen, setAuthOpen]       = useState(false);
+  const [progressOpen, setProgressOpen] = useState(false);
 
-  const sessionId = useRef(getOrCreateSessionId()).current;
+  const { token, user, authHeader, register, login, logout } = useAuth(API_URL);
+  const sessionId  = useRef(getOrCreateSessionId()).current;
   const chatEndRef = useRef(null);
 
-  // Load history for current session on mount
   useEffect(() => {
-    fetch(`${API_URL}/history/${sessionId}`)
+    fetch(`${API_URL}/history/${sessionId}`, { headers: authHeader })
       .then((r) => r.json())
       .then((data) => {
-        if (data.messages && data.messages.length > 0) {
+        if (data.messages?.length > 0)
           setMessages([WELCOME, ...data.messages.map(dbRowToMessage)]);
-        }
       })
-      .catch(() => {})
-      .finally(() => setHistoryLoaded(true));
+      .catch(() => {});
   }, [sessionId]);
 
   useEffect(() => {
     chatEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages]);
 
-  const handleModeChange = (m) => {
-    setMode(m);
-    setPendingQuiz(null);
-  };
+  const handleModeChange = (m) => { setMode(m); setPendingQuiz(null); };
 
   const handleResult = (result) => {
-    const userMsg = {
-      id: uid(),
-      type: "user",
-      text: result.transcript || "(inaudible)",
-      audioUrl: null,
-    };
-
-    const agentMsg = {
-      id: uid(),
-      type: "agent",
-      text: result.response,
-      audioUrl: result.audioUrl,
-      quizQuestion: result.quiz_question || null,
-      isCorrect: result.is_correct,
-      isStruggling: result.is_struggling,
-      evaluationMode: !!result.evaluationMode,
-    };
-
-    setMessages((prev) => [...prev, userMsg, agentMsg]);
+    setMessages((prev) => [
+      ...prev,
+      { id: uid(), type: "user",  text: result.transcript || "(inaudible)", audioUrl: null },
+      {
+        id: uid(), type: "agent", text: result.response,
+        audioUrl: result.audioUrl,
+        quizQuestion: result.quiz_question || null,
+        isCorrect: result.is_correct,
+        isStruggling: result.is_struggling,
+        evaluationMode: !!result.evaluationMode,
+      },
+    ]);
 
     if (result.evaluationMode) {
       if (!result.is_struggling) setPendingQuiz(null);
     } else if (result.quiz_question && mode === "quiz") {
-      setPendingQuiz({
-        question: result.quiz_question,
-        expectedAnswer: result.response,
-      });
+      setPendingQuiz({ question: result.quiz_question, expectedAnswer: result.response });
     } else {
       setPendingQuiz(null);
     }
   };
 
-  const handleSessionSwitch = (newSessionId) => {
-    localStorage.setItem("vs_session_id", newSessionId);
-    window.location.reload();
-  };
-
-  const handleNewSession = () => {
-    const newId = crypto.randomUUID();
-    localStorage.setItem("vs_session_id", newId);
-    window.location.reload();
-  };
+  const handleSessionSwitch = (id) => { localStorage.setItem("vs_session_id", id); window.location.reload(); };
+  const handleNewSession    = ()  => { localStorage.setItem("vs_session_id", crypto.randomUUID()); window.location.reload(); };
 
   const { isRecording, isProcessing, startRecording, stopRecording } = useVoice({
-    apiUrl: API_URL,
-    mode,
-    subject,
-    sessionId,
-    pendingQuiz,
-    language,
+    apiUrl: API_URL, mode, subject, sessionId,
+    pendingQuiz, language, authHeader,
     onResult: handleResult,
   });
 
@@ -158,10 +125,8 @@ export default function App() {
 
   return (
     <div className="app">
-      {/* Mobile bottom sheet */}
       <MobileMenu
-        open={mobileMenuOpen}
-        onClose={() => setMobileMenuOpen(false)}
+        open={mobileMenuOpen} onClose={() => setMobileMenuOpen(false)}
         mode={mode} onModeChange={handleModeChange}
         subject={subject} onSubjectChange={setSubject}
         language={language} onLanguageChange={setLanguage}
@@ -170,14 +135,21 @@ export default function App() {
         ragLoaded={ragLoaded} ragMeta={ragMeta}
       />
 
-      {/* Session Drawer */}
       <SessionDrawer
-        open={drawerOpen}
-        onClose={() => setDrawerOpen(false)}
-        apiUrl={API_URL}
+        open={drawerOpen} onClose={() => setDrawerOpen(false)}
+        apiUrl={API_URL} authHeader={authHeader}
         currentSessionId={sessionId}
-        onSwitch={handleSessionSwitch}
-        onNew={handleNewSession}
+        onSwitch={handleSessionSwitch} onNew={handleNewSession}
+      />
+
+      <AuthModal
+        open={authOpen} onClose={() => setAuthOpen(false)}
+        onLogin={login} onRegister={register}
+      />
+
+      <ProgressPanel
+        open={progressOpen} onClose={() => setProgressOpen(false)}
+        apiUrl={API_URL} authHeader={authHeader}
       />
 
       {/* Sidebar */}
@@ -185,6 +157,24 @@ export default function App() {
         <div className="logo">
           <span className="logo-icon">⚡</span>
           <span className="logo-text">VoiceSensei</span>
+        </div>
+
+        {/* User account */}
+        <div className="sidebar-section">
+          {user ? (
+            <div className="user-card">
+              <div className="user-avatar">{user.username[0].toUpperCase()}</div>
+              <div className="user-info">
+                <div className="user-name">{user.username}</div>
+                <button className="user-signout" onClick={logout}>Sign out</button>
+              </div>
+              <button className="progress-btn" onClick={() => setProgressOpen(true)} title="Progress">📈</button>
+            </div>
+          ) : (
+            <button className="signin-btn" onClick={() => setAuthOpen(true)}>
+              👤 Sign in to track progress
+            </button>
+          )}
         </div>
 
         <div className="sidebar-section">
@@ -204,73 +194,46 @@ export default function App() {
 
         <div className="sidebar-section">
           <span className="section-label">Study Material</span>
-          <UploadPDF
-            apiUrl={API_URL}
-            onLoaded={(meta) => {
-              setRagLoaded(true);
-              setRagMeta(meta);
-            }}
-          />
+          <UploadPDF apiUrl={API_URL} onLoaded={(meta) => { setRagLoaded(true); setRagMeta(meta); }} />
           {ragLoaded && ragMeta && (
-            <div className="rag-badge">
-              ✓ {ragMeta.pages} pages · {ragMeta.chunks} chunks indexed
-            </div>
+            <div className="rag-badge">✓ {ragMeta.pages} pages · {ragMeta.chunks} chunks indexed</div>
           )}
         </div>
 
         <div className="sidebar-footer">
           {mode === "quiz" && pendingQuiz && (
-            <div className="quiz-indicator">
-              <span className="quiz-dot" />
-              Awaiting your answer…
-            </div>
+            <div className="quiz-indicator"><span className="quiz-dot" />Awaiting your answer…</div>
           )}
-
-          <button className="history-btn" onClick={() => setDrawerOpen(true)}>
-            🕐 Session History
-          </button>
+          <button className="history-btn" onClick={() => setDrawerOpen(true)}>🕐 Session History</button>
         </div>
       </aside>
 
       {/* Main */}
       <main className="main">
-        {/* Mobile top bar */}
         <div className="mobile-topbar">
           <div className="logo">
             <span className="logo-icon">⚡</span>
             <span className="logo-text">VoiceSensei</span>
           </div>
           <div style={{ display: "flex", gap: 8 }}>
-            <button className="mobile-icon-btn" onClick={() => setDrawerOpen(true)} aria-label="History">
-              🕐
-            </button>
-            <button className="mobile-icon-btn" onClick={() => setMobileMenuOpen(true)} aria-label="Menu">
-              ☰
-            </button>
+            {user && <button className="mobile-icon-btn" onClick={() => setProgressOpen(true)}>📈</button>}
+            {!user && <button className="mobile-icon-btn" onClick={() => setAuthOpen(true)}>👤</button>}
+            <button className="mobile-icon-btn" onClick={() => setDrawerOpen(true)}>🕐</button>
+            <button className="mobile-icon-btn" onClick={() => setMobileMenuOpen(true)}>☰</button>
           </div>
         </div>
 
         <div className="chat-container">
-          {messages.map((msg) => (
-            <ChatBubble key={msg.id} message={msg} />
-          ))}
-
-          {isProcessing && (
-            <div className="thinking-bubble">
-              <span /><span /><span />
-            </div>
-          )}
-
+          {messages.map((msg) => <ChatBubble key={msg.id} message={msg} />)}
+          {isProcessing && <div className="thinking-bubble"><span /><span /><span /></div>}
           <div ref={chatEndRef} />
         </div>
 
         <div className="input-bar">
           <div className="mode-hint">{getModeHint()}</div>
           <MicButton
-            isRecording={isRecording}
-            isProcessing={isProcessing}
-            onStart={startRecording}
-            onStop={stopRecording}
+            isRecording={isRecording} isProcessing={isProcessing}
+            onStart={startRecording} onStop={stopRecording}
           />
         </div>
       </main>

@@ -11,6 +11,7 @@ export default function useVoice({
   sessionId,
   pendingQuiz,
   language = "en",
+  authHeader = {},
   onResult,
 }) {
   const [isRecording, setIsRecording] = useState(false);
@@ -100,7 +101,7 @@ export default function useVoice({
     fd.append("session_id", sessionId);
     fd.append("language", language);
 
-    const res = await fetch(`${apiUrl}/voice`, { method: "POST", body: fd });
+    const res = await fetch(`${apiUrl}/voice`, { method: "POST", body: fd, headers: authHeader });
     if (!res.ok) {
       const err = await res.json().catch(() => ({}));
       throw new Error(err.detail || `HTTP ${res.status}`);
@@ -119,7 +120,7 @@ export default function useVoice({
     fd.append("session_id", sessionId);
     fd.append("language", language);
 
-    const res = await fetch(`${apiUrl}/quiz/evaluate`, { method: "POST", body: fd });
+    const res = await fetch(`${apiUrl}/quiz/evaluate`, { method: "POST", body: fd, headers: authHeader });
     if (!res.ok) {
       const err = await res.json().catch(() => ({}));
       throw new Error(err.detail || `HTTP ${res.status}`);

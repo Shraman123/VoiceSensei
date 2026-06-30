@@ -1,12 +1,16 @@
 """
 VoiceSensei — FastAPI Backend
 Endpoints:
+  POST /auth/register           — create account
+  POST /auth/login              — get JWT
+  GET  /auth/me                 — current user
   GET  /health                  — health check
   POST /upload                  — ingest PDF into RAG
-  POST /voice                   — main pipeline: STT → RAG → LLM → TTS
-  POST /quiz/evaluate           — Struggle Detector: evaluate student's quiz answer
-  GET  /history/{session_id}    — fetch persisted chat history for a session
-  GET  /sessions                — list recent sessions
+  POST /voice                   — STT → RAG → LLM → TTS
+  POST /quiz/evaluate           — Struggle Detector
+  GET  /history/{session_id}    — chat history for a session
+  GET  /sessions                — recent sessions
+  GET  /progress                — user progress stats
 """
 import base64
 import uuid
@@ -16,16 +20,25 @@ from pathlib import Path
 from dotenv import load_dotenv
 load_dotenv()
 
-from fastapi import FastAPI, File, Form, HTTPException, UploadFile
+from fastapi import FastAPI, File, Form, HTTPException, UploadFile, Depends, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
+from pydantic import BaseModel, EmailStr
 
 from pipeline.stt import transcribe_audio
 from pipeline.llm import generate_response
 from pipeline.tts import synthesize_speech
 from pipeline.rag import RAGPipeline
 from pipeline.quiz import QuizEngine
-from database import init_db, save_turn, get_history, get_sessions
+from database import (
+    init_db, save_turn, save_quiz_score,
+    get_history, get_sessions, get_progress,
+    create_user, get_user_by_email,
+)
+from auth import (
+    hash_password, verify_password, create_access_token,
+    get_current_user, require_user,
+)
 
 
 rag = RAGPipeline()
@@ -43,7 +56,7 @@ async def lifespan(app: FastAPI):
 app = FastAPI(
     title="VoiceSensei API",
     description="AI Voice Tutor for Indian Competitive Exam Prep",
-    version="1.0.0",
+    version="2.0.0",
     lifespan=lifespan,
 )
 
@@ -56,29 +69,66 @@ app.add_middleware(
 )
 
 
+# ── Auth ───────────────────────────────────────────────────────────────────────
+
+class RegisterRequest(BaseModel):
+    username: str
+    email: str
+    password: str
+
+
+class LoginRequest(BaseModel):
+    email: str
+    password: str
+
+
+@app.post("/auth/register", status_code=status.HTTP_201_CREATED)
+async def register(body: RegisterRequest):
+    if len(body.password) < 6:
+        raise HTTPException(400, "Password must be at least 6 characters.")
+    existing = await get_user_by_email(body.email)
+    if existing:
+        raise HTTPException(400, "An account with this email already exists.")
+    user = await create_user(body.username, body.email, hash_password(body.password))
+    token = create_access_token(user["id"])
+    return {"token": token, "user": {"id": user["id"], "username": user["username"], "email": user["email"]}}
+
+
+@app.post("/auth/login")
+async def login(body: LoginRequest):
+    user = await get_user_by_email(body.email)
+    if not user or not verify_password(body.password, user["password_hash"]):
+        raise HTTPException(401, "Invalid email or password.")
+    token = create_access_token(user["id"])
+    return {"token": token, "user": {"id": user["id"], "username": user["username"], "email": user["email"]}}
+
+
+@app.get("/auth/me")
+async def me(user: dict = Depends(require_user)):
+    return {"id": user["id"], "username": user["username"], "email": user["email"]}
+
+
+# ── Health ─────────────────────────────────────────────────────────────────────
+
 @app.get("/health")
 async def health():
-    return {"status": "ok", "rag_loaded": rag.is_loaded, "version": "1.0.0"}
+    return {"status": "ok", "rag_loaded": rag.is_loaded, "version": "2.0.0"}
 
+
+# ── Upload ─────────────────────────────────────────────────────────────────────
 
 @app.post("/upload")
 async def upload_pdf(file: UploadFile = File(...)):
-    """Upload a PDF study document into FAISS."""
     if not file.filename.lower().endswith(".pdf"):
-        raise HTTPException(status_code=400, detail="Only PDF files are supported.")
-
+        raise HTTPException(400, "Only PDF files are supported.")
     content = await file.read()
     if len(content) > 10 * 1024 * 1024:
-        raise HTTPException(status_code=400, detail="PDF must be under 10 MB.")
-
+        raise HTTPException(400, "PDF must be under 10 MB.")
     result = rag.load_pdf_bytes(content, file.filename)
-    return {
-        "status": "loaded",
-        "filename": file.filename,
-        "chunks": result["chunks"],
-        "pages": result["pages"],
-    }
+    return {"status": "loaded", "filename": file.filename, "chunks": result["chunks"], "pages": result["pages"]}
 
+
+# ── Voice pipeline ─────────────────────────────────────────────────────────────
 
 @app.post("/voice")
 async def voice_pipeline(
@@ -87,21 +137,18 @@ async def voice_pipeline(
     subject: str = Form("general"),
     session_id: str = Form(None),
     language: str = Form("en"),
+    user: dict = Depends(get_current_user),
 ):
-    """Main voice pipeline: STT → RAG → LLM → TTS"""
     if session_id is None:
         session_id = str(uuid.uuid4())
 
     audio_bytes = await audio.read()
     if not audio_bytes:
-        raise HTTPException(status_code=400, detail="Empty audio received.")
+        raise HTTPException(400, "Empty audio received.")
 
     transcript = await transcribe_audio(audio_bytes, language=language if language == "hi" else None)
     if not transcript:
-        raise HTTPException(
-            status_code=400,
-            detail="Could not transcribe audio. Please speak clearly and try again.",
-        )
+        raise HTTPException(400, "Could not transcribe audio. Please speak clearly and try again.")
 
     context = rag.retrieve(transcript) if rag.is_loaded else ""
 
@@ -124,6 +171,7 @@ async def voice_pipeline(
         mode=mode,
         subject=subject,
         quiz_question=quiz_question,
+        user_id=user["id"] if user else None,
     )
 
     return {
@@ -135,6 +183,8 @@ async def voice_pipeline(
     }
 
 
+# ── Quiz evaluate ──────────────────────────────────────────────────────────────
+
 @app.post("/quiz/evaluate")
 async def evaluate_quiz_answer(
     audio: UploadFile = File(...),
@@ -143,28 +193,22 @@ async def evaluate_quiz_answer(
     subject: str = Form("general"),
     session_id: str = Form(None),
     language: str = Form("en"),
+    user: dict = Depends(get_current_user),
 ):
-    """Struggle Detector: evaluate student's spoken quiz answer."""
     if session_id is None:
         session_id = str(uuid.uuid4())
 
     audio_bytes = await audio.read()
     if not audio_bytes:
-        raise HTTPException(status_code=400, detail="Empty audio received.")
+        raise HTTPException(400, "Empty audio received.")
 
     student_answer = await transcribe_audio(audio_bytes, language=language if language == "hi" else None)
     if not student_answer:
-        raise HTTPException(
-            status_code=400,
-            detail="Could not transcribe your answer. Please try again.",
-        )
+        raise HTTPException(400, "Could not transcribe your answer. Please try again.")
 
     evaluation = await quiz_engine.evaluate_answer(
-        question=question,
-        expected=expected_answer,
-        student_answer=student_answer,
-        subject=subject,
-        language=language,
+        question=question, expected=expected_answer,
+        student_answer=student_answer, subject=subject, language=language,
     )
 
     speech_bytes = await synthesize_speech(evaluation["feedback"], language=language)
@@ -177,7 +221,17 @@ async def evaluate_quiz_answer(
         subject=subject,
         is_correct=evaluation.get("is_correct"),
         is_struggling=evaluation.get("is_struggling"),
+        user_id=user["id"] if user else None,
     )
+
+    if user:
+        await save_quiz_score(
+            user_id=user["id"],
+            session_id=session_id,
+            subject=subject,
+            score=evaluation.get("score", 5),
+            is_correct=evaluation.get("is_correct", False),
+        )
 
     return {
         "student_answer": student_answer,
@@ -190,20 +244,30 @@ async def evaluate_quiz_answer(
     }
 
 
+# ── History & sessions ─────────────────────────────────────────────────────────
+
 @app.get("/history/{session_id}")
 async def fetch_history(session_id: str):
-    """Return all messages for a session in chronological order."""
     messages = await get_history(session_id)
     return {"session_id": session_id, "messages": messages}
 
 
 @app.get("/sessions")
-async def fetch_sessions():
-    """Return the 20 most recent sessions."""
-    return {"sessions": await get_sessions()}
+async def fetch_sessions(user: dict = Depends(get_current_user)):
+    sessions = await get_sessions(user_id=user["id"] if user else None)
+    return {"sessions": sessions}
 
 
-# Serve built React frontend (production only — static/ dir created by Dockerfile)
+# ── Progress ───────────────────────────────────────────────────────────────────
+
+@app.get("/progress")
+async def fetch_progress(user: dict = Depends(require_user)):
+    stats = await get_progress(user["id"])
+    return stats
+
+
+# ── Serve frontend (production) ────────────────────────────────────────────────
+
 _static_dir = Path(__file__).parent / "static"
 if _static_dir.exists():
     app.mount("/", StaticFiles(directory=_static_dir, html=True), name="frontend")

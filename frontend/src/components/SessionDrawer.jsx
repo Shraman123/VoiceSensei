@@ -11,14 +11,14 @@ function formatDate(iso) {
   });
 }
 
-export default function SessionDrawer({ open, onClose, apiUrl, currentSessionId, onSwitch, onNew }) {
+export default function SessionDrawer({ open, onClose, apiUrl, authHeader = {}, currentSessionId, onSwitch, onNew }) {
   const [sessions, setSessions] = useState([]);
   const [loading, setLoading] = useState(false);
 
   useEffect(() => {
     if (!open) return;
     setLoading(true);
-    fetch(`${apiUrl}/sessions`)
+    fetch(`${apiUrl}/sessions`, { headers: authHeader })
       .then((r) => r.json())
       .then((d) => setSessions(d.sessions || []))
       .catch(() => setSessions([]))
