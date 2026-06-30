@@ -8,21 +8,29 @@ import os
 from groq import AsyncGroq
 
 
-async def transcribe_audio(audio_bytes: bytes, filename: str = "recording.webm") -> str:
+async def transcribe_audio(
+    audio_bytes: bytes,
+    filename: str = "recording.webm",
+    language: str = None,
+) -> str:
     """
     Transcribe audio bytes using Groq's Whisper endpoint.
+    Pass language="hi" for Hindi, None for auto-detect.
     Groq free tier: 7,200 seconds/day — plenty for a study session.
     """
     client = AsyncGroq(api_key=os.getenv("GROQ_API_KEY"))
 
     audio_file = (filename, io.BytesIO(audio_bytes), _mime_from_filename(filename))
 
-    transcription = await client.audio.transcriptions.create(
+    kwargs = dict(
         model="whisper-large-v3-turbo",
         file=audio_file,
         response_format="text",
-        language="en",  # remove to enable auto-detect
     )
+    if language:
+        kwargs["language"] = language
+
+    transcription = await client.audio.transcriptions.create(**kwargs)
 
     if isinstance(transcription, str):
         return transcription.strip()

@@ -14,6 +14,13 @@ QUIZ_SUFFIX = (
     "Format your response as:\nANSWER: <your explanation>\nQUIZ: <your question>"
 )
 
+HINDI_QUIZ_SUFFIX = (
+    "\n\nIMPORTANT: The student is using Hindi mode. "
+    "Respond ENTIRELY in simple Hindi (Devanagari script). "
+    "After your explanation, ask ONE short quiz question in Hindi. "
+    "Format your response as:\nANSWER: <your explanation>\nQUIZ: <your question>"
+)
+
 EVAL_PROMPT = """You are an exam tutor evaluating a student's spoken answer.
 
 Quiz question: {question}
@@ -41,6 +48,7 @@ class QuizEngine:
         question: str,
         context: str = "",
         subject: str = "general",
+        language: str = "en",
     ) -> tuple[str, str]:
         """
         Generate a study answer + quiz question.
@@ -48,7 +56,7 @@ class QuizEngine:
         """
         client = AsyncGroq(api_key=os.getenv("GROQ_API_KEY"))
         system = SYSTEM_PROMPTS.get(subject.lower(), SYSTEM_PROMPTS["general"])
-        system_with_quiz = system + QUIZ_SUFFIX
+        system_with_quiz = system + (HINDI_QUIZ_SUFFIX if language == "hi" else QUIZ_SUFFIX)
 
         if context:
             user_content = (
@@ -90,6 +98,7 @@ class QuizEngine:
         expected: str,
         student_answer: str,
         subject: str = "general",
+        language: str = "en",
     ) -> dict:
         """
         Evaluate student's quiz answer. Returns evaluation dict.
@@ -99,11 +108,15 @@ class QuizEngine:
 
         client = AsyncGroq(api_key=os.getenv("GROQ_API_KEY"))
 
+        lang_instruction = (
+            "\nIMPORTANT: Respond with the 'feedback' field in Hindi (Devanagari script)."
+            if language == "hi" else ""
+        )
         prompt = EVAL_PROMPT.format(
             question=question,
             expected=expected,
             student_answer=student_answer,
-        )
+        ) + lang_instruction
 
         response = await client.chat.completions.create(
             model="llama-3.3-70b-versatile",

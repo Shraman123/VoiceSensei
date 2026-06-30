@@ -10,6 +10,7 @@ export default function useVoice({
   subject,
   sessionId,
   pendingQuiz,
+  language = "en",
   onResult,
 }) {
   const [isRecording, setIsRecording] = useState(false);
@@ -97,6 +98,7 @@ export default function useVoice({
     fd.append("mode", mode);
     fd.append("subject", subject);
     fd.append("session_id", sessionId);
+    fd.append("language", language);
 
     const res = await fetch(`${apiUrl}/voice`, { method: "POST", body: fd });
     if (!res.ok) {
@@ -115,6 +117,7 @@ export default function useVoice({
     fd.append("expected_answer", pendingQuiz.expectedAnswer);
     fd.append("subject", subject);
     fd.append("session_id", sessionId);
+    fd.append("language", language);
 
     const res = await fetch(`${apiUrl}/quiz/evaluate`, { method: "POST", body: fd });
     if (!res.ok) {

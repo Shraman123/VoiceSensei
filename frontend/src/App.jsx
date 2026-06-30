@@ -12,6 +12,7 @@ import ModeToggle from "./components/ModeToggle";
 import SubjectSelector from "./components/SubjectSelector";
 import UploadPDF from "./components/UploadPDF";
 import SessionDrawer from "./components/SessionDrawer";
+import LanguageToggle from "./components/LanguageToggle";
 import useVoice from "./hooks/useVoice";
 
 const API_URL = import.meta.env.VITE_API_URL || "http://localhost:8000";
@@ -58,6 +59,7 @@ export default function App() {
   const [ragLoaded, setRagLoaded] = useState(false);
   const [ragMeta, setRagMeta] = useState(null);
   const [pendingQuiz, setPendingQuiz] = useState(null);
+  const [language, setLanguage] = useState("en");
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [historyLoaded, setHistoryLoaded] = useState(false);
 
@@ -136,10 +138,16 @@ export default function App() {
     subject,
     sessionId,
     pendingQuiz,
+    language,
     onResult: handleResult,
   });
 
   const getModeHint = () => {
+    if (language === "hi") {
+      if (mode === "quiz" && pendingQuiz) return "🎯 ऊपर के प्रश्न का उत्तर दें";
+      if (mode === "quiz") return "📖 कोई विषय पूछें — मैं उत्तर दूंगा, फिर प्रश्न करूंगा";
+      return "🎤 कोई भी परीक्षा प्रश्न पूछें";
+    }
     if (mode === "quiz" && pendingQuiz) return "🎯 Answer the quiz question above";
     if (mode === "quiz") return "📖 Ask a topic — I'll answer, then quiz you";
     return "🎤 Ask any exam question";
@@ -167,6 +175,11 @@ export default function App() {
         <div className="sidebar-section">
           <span className="section-label">Mode</span>
           <ModeToggle mode={mode} onChange={handleModeChange} />
+        </div>
+
+        <div className="sidebar-section">
+          <span className="section-label">Language</span>
+          <LanguageToggle language={language} onChange={setLanguage} />
         </div>
 
         <div className="sidebar-section">

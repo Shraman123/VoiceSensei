@@ -84,6 +84,7 @@ async def voice_pipeline(
     mode: str = Form("study"),
     subject: str = Form("general"),
     session_id: str = Form(None),
+    language: str = Form("en"),
 ):
     """Main voice pipeline: STT → RAG → LLM → TTS"""
     if session_id is None:
@@ -93,7 +94,7 @@ async def voice_pipeline(
     if not audio_bytes:
         raise HTTPException(status_code=400, detail="Empty audio received.")
 
-    transcript = await transcribe_audio(audio_bytes)
+    transcript = await transcribe_audio(audio_bytes, language=language if language == "hi" else None)
     if not transcript:
         raise HTTPException(
             status_code=400,
@@ -104,15 +105,15 @@ async def voice_pipeline(
 
     if mode == "quiz":
         response_text, quiz_question = await quiz_engine.generate_quiz_response(
-            question=transcript, context=context, subject=subject,
+            question=transcript, context=context, subject=subject, language=language,
         )
     else:
         response_text = await generate_response(
-            question=transcript, context=context, subject=subject,
+            question=transcript, context=context, subject=subject, language=language,
         )
         quiz_question = None
 
-    speech_bytes = await synthesize_speech(response_text)
+    speech_bytes = await synthesize_speech(response_text, language=language)
 
     await save_turn(
         session_id=session_id,
@@ -139,6 +140,7 @@ async def evaluate_quiz_answer(
     expected_answer: str = Form(...),
     subject: str = Form("general"),
     session_id: str = Form(None),
+    language: str = Form("en"),
 ):
     """Struggle Detector: evaluate student's spoken quiz answer."""
     if session_id is None:
@@ -148,7 +150,7 @@ async def evaluate_quiz_answer(
     if not audio_bytes:
         raise HTTPException(status_code=400, detail="Empty audio received.")
 
-    student_answer = await transcribe_audio(audio_bytes)
+    student_answer = await transcribe_audio(audio_bytes, language=language if language == "hi" else None)
     if not student_answer:
         raise HTTPException(
             status_code=400,
@@ -160,9 +162,10 @@ async def evaluate_quiz_answer(
         expected=expected_answer,
         student_answer=student_answer,
         subject=subject,
+        language=language,
     )
 
-    speech_bytes = await synthesize_speech(evaluation["feedback"])
+    speech_bytes = await synthesize_speech(evaluation["feedback"], language=language)
 
     await save_turn(
         session_id=session_id,

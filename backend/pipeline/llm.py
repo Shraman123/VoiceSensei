@@ -41,14 +41,26 @@ SYSTEM_PROMPTS = {
 }
 
 
+HINDI_SUFFIX = (
+    "\n\nIMPORTANT: The student is using Hindi mode. "
+    "Respond ENTIRELY in simple, clear Hindi (Devanagari script). "
+    "Use easy vocabulary suitable for spoken audio — avoid complex Sanskrit terms. "
+    "Keep the response under 100 words."
+)
+
+
 async def generate_response(
     question: str,
     context: str = "",
     subject: str = "general",
+    language: str = "en",
 ) -> str:
     """Generate a study response from Groq LLM."""
     client = AsyncGroq(api_key=os.getenv("GROQ_API_KEY"))
     system = SYSTEM_PROMPTS.get(subject.lower(), SYSTEM_PROMPTS["general"])
+
+    if language == "hi":
+        system = system + HINDI_SUFFIX
 
     if context:
         user_content = (

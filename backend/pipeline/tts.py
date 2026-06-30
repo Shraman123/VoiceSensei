@@ -12,10 +12,11 @@ from gtts import gTTS
 ELEVENLABS_VOICE_ID = "21m00Tcm4TlvDq8ikWAM"  # Rachel — clear, calm, neutral
 
 
-async def synthesize_speech(text: str) -> bytes:
+async def synthesize_speech(text: str, language: str = "en") -> bytes:
     """
     Synthesise speech from text.
     Returns raw MP3 bytes.
+    ElevenLabs handles multilingual natively; gTTS uses lang code.
     """
     el_key = os.getenv("ELEVENLABS_API_KEY")
     if el_key:
@@ -24,7 +25,7 @@ async def synthesize_speech(text: str) -> bytes:
         except Exception as e:
             print(f"ElevenLabs TTS failed ({e}), falling back to gTTS")
 
-    return _gtts_tts(text)
+    return _gtts_tts(text, language)
 
 
 async def _elevenlabs_tts(text: str, api_key: str) -> bytes:
@@ -44,8 +45,9 @@ async def _elevenlabs_tts(text: str, api_key: str) -> bytes:
         return resp.content
 
 
-def _gtts_tts(text: str) -> bytes:
-    tts = gTTS(text=text, lang="en", slow=False)
+def _gtts_tts(text: str, language: str = "en") -> bytes:
+    lang_code = "hi" if language == "hi" else "en"
+    tts = gTTS(text=text, lang=lang_code, slow=False)
     buf = io.BytesIO()
     tts.write_to_fp(buf)
     buf.seek(0)
