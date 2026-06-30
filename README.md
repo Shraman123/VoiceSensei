@@ -1,3 +1,13 @@
+---
+title: VoiceSensei
+emoji: ⚡
+colorFrom: purple
+colorTo: indigo
+sdk: docker
+pinned: false
+app_port: 7860
+---
+
 <div align="center">
 
 # ⚡ VoiceSensei
@@ -207,12 +217,32 @@ VoiceSensei/
 
 ---
 
+## Deploy to Hugging Face Spaces
+
+VoiceSensei ships as a single Docker container — the FastAPI backend serves the built React frontend at the same URL.
+
+**Steps:**
+
+1. Fork / push this repo to your Hugging Face account
+2. Create a new Space → **Docker** SDK
+3. Add these repository secrets in Space Settings → Variables:
+   ```
+   GROQ_API_KEY      = your_groq_api_key
+   ELEVENLABS_API_KEY = your_elevenlabs_api_key   # optional
+   ```
+4. HF Spaces auto-detects `Dockerfile` at the root and builds it
+5. Your app is live at `https://huggingface.co/spaces/<your-username>/VoiceSensei`
+
+> The Docker build pre-downloads the `all-MiniLM-L6-v2` embedding model (~90 MB) so the first PDF upload is instant.
+
+---
+
 ## Roadmap
 
-- [ ] Persistent chat history (SQLite)
-- [ ] Hindi language support
-- [ ] Mobile PWA
-- [ ] Hugging Face Spaces deployment
+- [x] Persistent chat history (SQLite)
+- [x] Hindi language support
+- [x] Mobile PWA
+- [x] Hugging Face Spaces deployment
 - [ ] User accounts + progress tracking
 
 ---

@@ -11,12 +11,14 @@ Endpoints:
 import base64
 import uuid
 from contextlib import asynccontextmanager
+from pathlib import Path
 
 from dotenv import load_dotenv
 load_dotenv()
 
 from fastapi import FastAPI, File, Form, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
 
 from pipeline.stt import transcribe_audio
 from pipeline.llm import generate_response
@@ -199,3 +201,9 @@ async def fetch_history(session_id: str):
 async def fetch_sessions():
     """Return the 20 most recent sessions."""
     return {"sessions": await get_sessions()}
+
+
+# Serve built React frontend (production only — static/ dir created by Dockerfile)
+_static_dir = Path(__file__).parent / "static"
+if _static_dir.exists():
+    app.mount("/", StaticFiles(directory=_static_dir, html=True), name="frontend")

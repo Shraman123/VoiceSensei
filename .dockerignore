@@ -1,0 +1,12 @@
+**/__pycache__
+**/*.py[cod]
+**/.env
+**/.env.local
+**/node_modules
+**/dist
+backend/voicesensei.db
+backend/faiss_store/
+.git
+.claude
+.vscode
+*.md

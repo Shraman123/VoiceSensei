@@ -16,7 +16,8 @@ import LanguageToggle from "./components/LanguageToggle";
 import MobileMenu from "./components/MobileMenu";
 import useVoice from "./hooks/useVoice";
 
-const API_URL = import.meta.env.VITE_API_URL || "http://localhost:8000";
+// Empty string = relative URLs (same origin) when deployed on HF Spaces
+const API_URL = import.meta.env.VITE_API_URL ?? "http://localhost:8000";
 
 const WELCOME = {
   id: "welcome",
