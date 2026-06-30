@@ -1,0 +1,21 @@
+fastapi==0.115.5
+uvicorn[standard]==0.32.1
+python-multipart==0.0.18
+python-dotenv==1.0.1
+
+# AI / LLM + STT (one free Groq key covers both)
+groq==0.13.0
+
+# TTS
+gTTS==2.5.3
+httpx==0.28.0
+
+# RAG (embeddings run locally — no API key needed)
+langchain==0.3.7
+langchain-community==0.3.7
+faiss-cpu==1.9.0
+pypdf==5.1.0
+sentence-transformers==3.3.1
+
+# Utils
+pydantic==2.10.3
