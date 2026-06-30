@@ -3,6 +3,7 @@
  * State machine:
  *   study mode:  speak → answer
  *   quiz mode:   speak → answer + quiz question → speak answer → evaluated (Struggle Detector)
+ * Persistence: sessionId stored in localStorage, history fetched from backend on load.
  */
 import { useState, useRef, useEffect } from "react";
 import MicButton from "./components/MicButton";
@@ -10,6 +11,7 @@ import ChatBubble from "./components/ChatBubble";
 import ModeToggle from "./components/ModeToggle";
 import SubjectSelector from "./components/SubjectSelector";
 import UploadPDF from "./components/UploadPDF";
+import SessionDrawer from "./components/SessionDrawer";
 import useVoice from "./hooks/useVoice";
 
 const API_URL = import.meta.env.VITE_API_URL || "http://localhost:8000";
@@ -24,8 +26,30 @@ const WELCOME = {
   audioUrl: null,
 };
 
+function getOrCreateSessionId() {
+  let id = localStorage.getItem("vs_session_id");
+  if (!id) {
+    id = crypto.randomUUID();
+    localStorage.setItem("vs_session_id", id);
+  }
+  return id;
+}
+
 let _msgId = 1;
 const uid = () => String(_msgId++);
+
+function dbRowToMessage(row) {
+  return {
+    id: uid(),
+    type: row.role === "user" ? "user" : "agent",
+    text: row.text,
+    audioUrl: null,
+    quizQuestion: row.quiz_question || null,
+    isCorrect: row.is_correct === 1,
+    isStruggling: row.is_struggling === 1,
+    evaluationMode: row.is_correct !== null,
+  };
+}
 
 export default function App() {
   const [messages, setMessages] = useState([WELCOME]);
@@ -34,9 +58,24 @@ export default function App() {
   const [ragLoaded, setRagLoaded] = useState(false);
   const [ragMeta, setRagMeta] = useState(null);
   const [pendingQuiz, setPendingQuiz] = useState(null);
+  const [drawerOpen, setDrawerOpen] = useState(false);
+  const [historyLoaded, setHistoryLoaded] = useState(false);
 
-  const sessionId = useRef(crypto.randomUUID()).current;
+  const sessionId = useRef(getOrCreateSessionId()).current;
   const chatEndRef = useRef(null);
+
+  // Load history for current session on mount
+  useEffect(() => {
+    fetch(`${API_URL}/history/${sessionId}`)
+      .then((r) => r.json())
+      .then((data) => {
+        if (data.messages && data.messages.length > 0) {
+          setMessages([WELCOME, ...data.messages.map(dbRowToMessage)]);
+        }
+      })
+      .catch(() => {})
+      .finally(() => setHistoryLoaded(true));
+  }, [sessionId]);
 
   useEffect(() => {
     chatEndRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -70,7 +109,6 @@ export default function App() {
 
     if (result.evaluationMode) {
       if (!result.is_struggling) setPendingQuiz(null);
-      // if struggling, keep pendingQuiz so student gets another attempt
     } else if (result.quiz_question && mode === "quiz") {
       setPendingQuiz({
         question: result.quiz_question,
@@ -79,6 +117,17 @@ export default function App() {
     } else {
       setPendingQuiz(null);
     }
+  };
+
+  const handleSessionSwitch = (newSessionId) => {
+    localStorage.setItem("vs_session_id", newSessionId);
+    window.location.reload();
+  };
+
+  const handleNewSession = () => {
+    const newId = crypto.randomUUID();
+    localStorage.setItem("vs_session_id", newId);
+    window.location.reload();
   };
 
   const { isRecording, isProcessing, startRecording, stopRecording } = useVoice({
@@ -98,6 +147,16 @@ export default function App() {
 
   return (
     <div className="app">
+      {/* Session Drawer */}
+      <SessionDrawer
+        open={drawerOpen}
+        onClose={() => setDrawerOpen(false)}
+        apiUrl={API_URL}
+        currentSessionId={sessionId}
+        onSwitch={handleSessionSwitch}
+        onNew={handleNewSession}
+      />
+
       {/* Sidebar */}
       <aside className="sidebar">
         <div className="logo">
@@ -138,6 +197,10 @@ export default function App() {
               Awaiting your answer…
             </div>
           )}
+
+          <button className="history-btn" onClick={() => setDrawerOpen(true)}>
+            🕐 Session History
+          </button>
         </div>
       </aside>
 

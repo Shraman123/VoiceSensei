@@ -1,10 +1,12 @@
 """
 VoiceSensei — FastAPI Backend
 Endpoints:
-  GET  /health            — health check
-  POST /upload            — ingest PDF into RAG
-  POST /voice             — main pipeline: STT → RAG → LLM → TTS
-  POST /quiz/evaluate     — Struggle Detector: evaluate student's quiz answer
+  GET  /health                  — health check
+  POST /upload                  — ingest PDF into RAG
+  POST /voice                   — main pipeline: STT → RAG → LLM → TTS
+  POST /quiz/evaluate           — Struggle Detector: evaluate student's quiz answer
+  GET  /history/{session_id}    — fetch persisted chat history for a session
+  GET  /sessions                — list recent sessions
 """
 import base64
 import uuid
@@ -21,6 +23,7 @@ from pipeline.llm import generate_response
 from pipeline.tts import synthesize_speech
 from pipeline.rag import RAGPipeline
 from pipeline.quiz import QuizEngine
+from database import init_db, save_turn, get_history, get_sessions
 
 
 rag = RAGPipeline()
@@ -29,6 +32,7 @@ quiz_engine = QuizEngine()
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    await init_db()
     print("VoiceSensei API starting up…")
     yield
     print("VoiceSensei API shutting down.")
@@ -43,7 +47,7 @@ app = FastAPI(
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # Lock down to your Vercel domain in production
+    allow_origins=["*"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -110,6 +114,15 @@ async def voice_pipeline(
 
     speech_bytes = await synthesize_speech(response_text)
 
+    await save_turn(
+        session_id=session_id,
+        user_text=transcript,
+        agent_text=response_text,
+        mode=mode,
+        subject=subject,
+        quiz_question=quiz_question,
+    )
+
     return {
         "session_id": session_id,
         "transcript": transcript,
@@ -125,8 +138,12 @@ async def evaluate_quiz_answer(
     question: str = Form(...),
     expected_answer: str = Form(...),
     subject: str = Form("general"),
+    session_id: str = Form(None),
 ):
     """Struggle Detector: evaluate student's spoken quiz answer."""
+    if session_id is None:
+        session_id = str(uuid.uuid4())
+
     audio_bytes = await audio.read()
     if not audio_bytes:
         raise HTTPException(status_code=400, detail="Empty audio received.")
@@ -147,6 +164,16 @@ async def evaluate_quiz_answer(
 
     speech_bytes = await synthesize_speech(evaluation["feedback"])
 
+    await save_turn(
+        session_id=session_id,
+        user_text=student_answer,
+        agent_text=evaluation["feedback"],
+        mode="quiz",
+        subject=subject,
+        is_correct=evaluation.get("is_correct"),
+        is_struggling=evaluation.get("is_struggling"),
+    )
+
     return {
         "student_answer": student_answer,
         "is_correct": evaluation.get("is_correct", False),
@@ -156,3 +183,16 @@ async def evaluate_quiz_answer(
         "simplified_explanation": evaluation.get("simplified_explanation"),
         "audio_b64": base64.b64encode(speech_bytes).decode("utf-8"),
     }
+
+
+@app.get("/history/{session_id}")
+async def fetch_history(session_id: str):
+    """Return all messages for a session in chronological order."""
+    messages = await get_history(session_id)
+    return {"session_id": session_id, "messages": messages}
+
+
+@app.get("/sessions")
+async def fetch_sessions():
+    """Return the 20 most recent sessions."""
+    return {"sessions": await get_sessions()}

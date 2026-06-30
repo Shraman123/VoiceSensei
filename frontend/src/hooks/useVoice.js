@@ -114,6 +114,7 @@ export default function useVoice({
     fd.append("question", pendingQuiz.question);
     fd.append("expected_answer", pendingQuiz.expectedAnswer);
     fd.append("subject", subject);
+    fd.append("session_id", sessionId);
 
     const res = await fetch(`${apiUrl}/quiz/evaluate`, { method: "POST", body: fd });
     if (!res.ok) {
