@@ -15,7 +15,7 @@ import ProgressPanel from "./components/ProgressPanel";
 import useVoice from "./hooks/useVoice";
 import useAuth from "./hooks/useAuth";
 
-const API_URL = import.meta.env.VITE_API_URL ?? "http://localhost:8000";
+const API_URL = (import.meta.env.VITE_API_URL || "").replace(/\/$/, "") || "http://localhost:8000";
 
 const WELCOME = {
   id: "welcome",
