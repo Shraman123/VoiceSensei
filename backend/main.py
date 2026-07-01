@@ -147,6 +147,7 @@ async def voice_pipeline(
     language: str = Form("en"),
     user: dict = Depends(get_current_user),
 ):
+    import traceback
     if session_id is None:
         session_id = str(uuid.uuid4())
 
@@ -154,23 +155,32 @@ async def voice_pipeline(
     if not audio_bytes:
         raise HTTPException(400, "Empty audio received.")
 
-    transcript = await transcribe_audio(audio_bytes, language=language if language == "hi" else None)
+    try:
+        transcript = await transcribe_audio(audio_bytes, language=language if language == "hi" else None)
+    except Exception as e:
+        raise HTTPException(500, f"STT failed: {traceback.format_exc()}")
     if not transcript:
         raise HTTPException(400, "Could not transcribe audio. Please speak clearly and try again.")
 
     context = rag.retrieve(transcript) if rag.is_loaded else ""
 
-    if mode == "quiz":
-        response_text, quiz_question = await quiz_engine.generate_quiz_response(
-            question=transcript, context=context, subject=subject, language=language,
-        )
-    else:
-        response_text = await generate_response(
-            question=transcript, context=context, subject=subject, language=language,
-        )
-        quiz_question = None
+    try:
+        if mode == "quiz":
+            response_text, quiz_question = await quiz_engine.generate_quiz_response(
+                question=transcript, context=context, subject=subject, language=language,
+            )
+        else:
+            response_text = await generate_response(
+                question=transcript, context=context, subject=subject, language=language,
+            )
+            quiz_question = None
+    except Exception as e:
+        raise HTTPException(500, f"LLM failed: {traceback.format_exc()}")
 
-    speech_bytes = await synthesize_speech(response_text, language=language)
+    try:
+        speech_bytes = await synthesize_speech(response_text, language=language)
+    except Exception as e:
+        raise HTTPException(500, f"TTS failed: {traceback.format_exc()}")
 
     await save_turn(
         session_id=session_id,
