@@ -112,7 +112,14 @@ async def me(user: dict = Depends(require_user)):
 
 @app.get("/health")
 async def health():
-    return {"status": "ok", "rag_loaded": rag.is_loaded, "version": "2.0.0"}
+    import os
+    return {
+        "status": "ok",
+        "rag_loaded": rag.is_loaded,
+        "version": "2.0.0",
+        "groq_key_set": bool(os.getenv("GROQ_API_KEY")),
+        "el_key_set": bool(os.getenv("ELEVENLABS_API_KEY")),
+    }
 
 
 # ── Upload ─────────────────────────────────────────────────────────────────────
