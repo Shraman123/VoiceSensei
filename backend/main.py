@@ -20,6 +20,21 @@ from pathlib import Path
 from dotenv import load_dotenv
 load_dotenv()
 
+import os as _os
+
+def _get_env(key: str) -> str:
+    """Read env var and strip accidental KEY=value prefix or trailing whitespace."""
+    val = _os.getenv(key, "")
+    if val.startswith(f"{key}="):
+        val = val[len(f"{key}="):]
+    return val.strip()
+
+# Patch env vars in place so all downstream imports see clean values
+for _k in ("GROQ_API_KEY", "ELEVENLABS_API_KEY", "SECRET_KEY"):
+    _v = _get_env(_k)
+    if _v:
+        _os.environ[_k] = _v
+
 from fastapi import FastAPI, File, Form, HTTPException, UploadFile, Depends, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
@@ -147,7 +162,6 @@ async def voice_pipeline(
     language: str = Form("en"),
     user: dict = Depends(get_current_user),
 ):
-    import traceback
     if session_id is None:
         session_id = str(uuid.uuid4())
 
@@ -155,32 +169,23 @@ async def voice_pipeline(
     if not audio_bytes:
         raise HTTPException(400, "Empty audio received.")
 
-    try:
-        transcript = await transcribe_audio(audio_bytes, language=language if language == "hi" else None)
-    except Exception as e:
-        raise HTTPException(500, f"STT failed: {traceback.format_exc()}")
+    transcript = await transcribe_audio(audio_bytes, language=language if language == "hi" else None)
     if not transcript:
         raise HTTPException(400, "Could not transcribe audio. Please speak clearly and try again.")
 
     context = rag.retrieve(transcript) if rag.is_loaded else ""
 
-    try:
-        if mode == "quiz":
-            response_text, quiz_question = await quiz_engine.generate_quiz_response(
-                question=transcript, context=context, subject=subject, language=language,
-            )
-        else:
-            response_text = await generate_response(
-                question=transcript, context=context, subject=subject, language=language,
-            )
-            quiz_question = None
-    except Exception as e:
-        raise HTTPException(500, f"LLM failed: {traceback.format_exc()}")
+    if mode == "quiz":
+        response_text, quiz_question = await quiz_engine.generate_quiz_response(
+            question=transcript, context=context, subject=subject, language=language,
+        )
+    else:
+        response_text = await generate_response(
+            question=transcript, context=context, subject=subject, language=language,
+        )
+        quiz_question = None
 
-    try:
-        speech_bytes = await synthesize_speech(response_text, language=language)
-    except Exception as e:
-        raise HTTPException(500, f"TTS failed: {traceback.format_exc()}")
+    speech_bytes = await synthesize_speech(response_text, language=language)
 
     await save_turn(
         session_id=session_id,
