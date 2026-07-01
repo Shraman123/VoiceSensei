@@ -121,6 +121,27 @@ async def health():
         "el_key_set": bool(os.getenv("ELEVENLABS_API_KEY")),
     }
 
+@app.get("/debug/auth")
+async def debug_auth():
+    """Test bcrypt + jose are working."""
+    try:
+        from auth import hash_password, create_access_token
+        h = hash_password("testpass")
+        t = create_access_token(1)
+        return {"bcrypt": "ok", "jose": "ok", "hash_len": len(h), "token_len": len(t)}
+    except Exception as e:
+        return {"error": str(e), "type": type(e).__name__}
+
+@app.get("/debug/db")
+async def debug_db():
+    """Test DB write."""
+    try:
+        from database import init_db
+        await init_db()
+        return {"db": "ok"}
+    except Exception as e:
+        return {"error": str(e), "type": type(e).__name__}
+
 
 # ── Upload ─────────────────────────────────────────────────────────────────────
 
